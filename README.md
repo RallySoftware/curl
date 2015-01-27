@@ -1,6 +1,15 @@
 curl (cujoJS resource loader)
 =====================
 
+## Rally Impl:
+
+cd bin
+
+./make.sh --NONE ../dist/rally/curl-debug.js ../src/curl.js ../src/curl/domReady.js ../src/curl/shim/dojo18.js ../src/curl/plugin/js.js ../src/curl/plugin/_fetchText.js ../src/curl/plugin/text.js ../src/curl/plugin/async.js ../src/curl/plugin/css.js ../src/curl/plugin/link.js ../src/curl/plugin/json.js ../src/curl/plugin/domReady.js ../src/curl/loader/legacy.js ../src/curl/loader/legacyPrefetch.js
+
+./make.sh ../dist/rally/curl.js ../src/curl.js ../src/curl/domReady.js ../src/curl/shim/dojo18.js ../src/curl/plugin/js.js ../src/curl/plugin/_fetchText.js ../src/curl/plugin/text.js ../src/curl/plugin/async.js ../src/curl/plugin/css.js ../src/curl/plugin/link.js ../src/curl/plugin/json.js ../src/curl/plugin/domReady.js ../src/curl/loader/legacy.js ../src/curl/loader/legacyPrefetch.js
+
+
 ## Note: curl.js --> RaveJS
 
 We are very excited about [RaveJS](https://github.com/RaveJS), the successor to curl.js.  At its core, rave uses an ES6 Loader, rather than an AMD loader.  However, rave can load many types of modules, *including AMD*.  Therefore, rave will work with your application's AMD modules.  

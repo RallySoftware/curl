@@ -3127,7 +3127,7 @@ define('curl/loader/legacyPrefetch', ['curl/_privileged'], function (priv) {
 	};
 
 	hasAsyncFalse = doc && doc.createElement('script').async == true;
-	loadScript = function (options, _export, reject) {
+	loadScript = function (options, _callback, reject) {
 		//this is a simple implementation that only prefetches the content and does not create any JS objects
 		//useful for using spare network/CPU cycles to start loading libraries that will be needed in the future.
 		var x = xhr();
@@ -3135,7 +3135,7 @@ define('curl/loader/legacyPrefetch', ['curl/_privileged'], function (priv) {
 		x.onreadystatechange = function (e) {
 			if (x.readyState === 4) {
 				if (x.status < 400) {
-					//callback(x.responseText);
+					_callback(x.responseText);
 				}
 				else {
 					reject(new Error('fetchText() failed. status: ' + x.statusText));
@@ -3199,40 +3199,20 @@ define('curl/loader/legacyPrefetch', ['curl/_privileged'], function (priv) {
 
 			function load () {
 				// load script, possibly with a fake mimetype
-				loadScript(options, _export, reject);
+				loadScript(options, _callback, reject);
 			}
 
 			function reload () {
 				// if we faked the mimetype, we need to refetch.
 				// (hopefully, from cache, if cache headers allow.)
 				options.mimetype = '';
-				loadScript(options, _export, reject);
+				loadScript(options, _callback, reject);
 			}
 
-			function _export () {
-				var exported;
-				if (--countdown > 0) return;
-				if (factory) {
-					try {
-						exported = factory.call(global, resId);
-					}
-					catch (ex) {
-						reject(new Error('Factory for legacy ' + resId + ' failed: ' + ex.message));
-					}
+			function _callback (response) {
+				if (callback) {
+					callback(response);
 				}
-				else {
-					try {
-						exported = testGlobalVar(exports);
-					}
-					catch (ex) {
-						reject(new Error ('Failed to find exports ' + exports + ' for legacy ' + resId));
-					}
-				}
-				// define the module as if it were a regular module.
-				// Note: the parens hide the "define signature" from cram.js
-				(define)(resId, exported);
-				// also return the plugin-syntax module ("legacy!foo").
-				callback(exported);
 			}
 
 			function reject (ex) {

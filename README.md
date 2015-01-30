@@ -2,13 +2,17 @@ curl (cujoJS resource loader)
 =====================
 
 ## Rally Impl:
+This approach leverages the kitchen-sink approach (which we were using before this fork) and adds the legacyPrefetch loader to the end. We should identify exactly what modules are needed, and only load those to save some space - however we're only talking ~24kb for the whole thing, so there are other higher value targets we can hit up first.
 
+The prefetchLoader fetches files without processing/parsing them. This has the effect of caching files on the client without incurring CPU overhead.
+
+````
 cd bin
 
-./make.sh --NONE ../dist/rally/curl-debug.js ../src/curl.js ../src/curl/domReady.js ../src/curl/shim/dojo18.js ../src/curl/plugin/js.js ../src/curl/plugin/_fetchText.js ../src/curl/plugin/text.js ../src/curl/plugin/async.js ../src/curl/plugin/css.js ../src/curl/plugin/link.js ../src/curl/plugin/json.js ../src/curl/plugin/domReady.js ../src/curl/loader/legacy.js ../src/curl/loader/legacyPrefetch.js
+./make.sh --NONE ../dist/rally/curl-debug.js ../src/curl.js ../src/curl/domReady.js ../src/curl/shim/dojo18.js ../src/curl/plugin/js.js ../src/curl/plugin/_fetchText.js ../src/curl/plugin/text.js ../src/curl/plugin/async.js ../src/curl/plugin/css.js ../src/curl/plugin/link.js ../src/curl/plugin/json.js ../src/curl/plugin/domReady.js ../src/curl/shim/_fetchText.js ../src/curl/shim/ssjs.js ../src/curl/loader/cjsm11.js ../src/curl/plugin/locale.js ../src/curl/plugin/i18n.js ../src/curl/loader/legacy.js ../src/curl/loader/legacyPrefetch.js
 
-./make.sh ../dist/rally/curl.js ../src/curl.js ../src/curl/domReady.js ../src/curl/shim/dojo18.js ../src/curl/plugin/js.js ../src/curl/plugin/_fetchText.js ../src/curl/plugin/text.js ../src/curl/plugin/async.js ../src/curl/plugin/css.js ../src/curl/plugin/link.js ../src/curl/plugin/json.js ../src/curl/plugin/domReady.js ../src/curl/loader/legacy.js ../src/curl/loader/legacyPrefetch.js
-
+./make.sh ../dist/rally/curl.js ../src/curl.js ../src/curl/domReady.js ../src/curl/shim/dojo18.js ../src/curl/plugin/js.js ../src/curl/plugin/_fetchText.js ../src/curl/plugin/text.js ../src/curl/plugin/async.js ../src/curl/plugin/css.js ../src/curl/plugin/link.js ../src/curl/plugin/json.js ../src/curl/plugin/domReady.js ../src/curl/shim/_fetchText.js ../src/curl/shim/ssjs.js ../src/curl/loader/cjsm11.js ../src/curl/plugin/locale.js ../src/curl/plugin/i18n.js ../src/curl/loader/legacy.js ../src/curl/loader/legacyPrefetch.js
+````
 
 ## Note: curl.js --> RaveJS
 

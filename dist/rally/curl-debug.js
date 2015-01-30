@@ -2801,6 +2801,651 @@ define('curl/plugin/domReady', ['../domReady'], function (domReady) {
 	};
 
 });
+(function (freeRequire) {
+define('curl/shim/_fetchText', function () {
+
+	var fs, http, url;
+
+	fs = freeRequire('fs');
+	http = freeRequire('http');
+	url = freeRequire('url');
+
+	var hasHttpProtocolRx;
+
+	hasHttpProtocolRx = /^https?:/;
+
+	function fetchText (url, callback, errback) {
+		if (hasHttpProtocolRx.test(url)) {
+			loadFileViaNodeHttp(url, callback, errback);
+		}
+		else {
+			loadLocalFile(url, callback, errback);
+		}
+	}
+
+	return fetchText;
+
+	function loadLocalFile (uri, callback, errback) {
+		fs.readFile(uri, function (ex, contents) {
+			if (ex) {
+				errback(ex);
+			}
+			else {
+				callback(contents.toString());
+			}
+		});
+	}
+
+	function loadFileViaNodeHttp (uri, callback, errback) {
+		var options, data;
+		options = url.parse(uri, false, true);
+		data = '';
+		http.get(options, function (response) {
+			response
+				.on('data', function (chunk) { data += chunk; })
+				.on('end', function () { callback(data); })
+				.on('error', errback);
+		}).on('error', errback);
+	}
+
+});
+}(require));
+/** MIT License (c) copyright 2010-2013 B Cavalier & J Hann */
+
+/**
+ * curl ssjs shim
+ * Modifies curl to work as an AMD loader function in server-side
+ * environments such as RingoJS, Rhino, and NodeJS.
+ *
+ * Licensed under the MIT License at:
+ * 		http://www.opensource.org/licenses/mit-license.php
+ *
+ * TODO: support environments that implement XMLHttpRequest such as Wakanda
+ */
+define['amd'].ssjs = true;
+if (typeof module !== 'undefined') module.exports = curl;
+var require, load;
+(function (freeRequire, globalLoad) {
+define('curl/shim/ssjs', ['curl/_privileged', './_fetchText'], function (priv, _fetchText) {
+"use strict";
+
+	var cache, config,
+		hasProtocolRx, extractProtocolRx, protocol,
+		http, localLoadFunc, remoteLoadFunc,
+		undef;
+
+	// first, bail if we're in a browser!
+	if (typeof window == 'object' && (window.clientInformation || window.navigator)) {
+		return;
+	}
+
+	cache = priv.cache;
+	config = priv.config();
+
+    hasProtocolRx = /^\w+:\/\//;
+	extractProtocolRx = /(^\w+:)?.*$/;
+
+	// force-overwrite the xhr-based _fetchText
+	if (typeof XMLHttpRequest == 'undefined') {
+		cache['curl/plugin/_fetchText'] = _fetchText;
+	}
+
+    protocol = fixProtocol(config.defaultProtocol)
+		|| extractProtocol(config.baseUrl)
+		|| 'http:';
+
+	// sniff for capabilities
+
+	if (globalLoad) {
+		// rhino & ringo make this so easy
+		localLoadFunc = remoteLoadFunc = loadScriptViaLoad;
+	}
+	else if (freeRequire) {
+		localLoadFunc = loadScriptViaRequire;
+		// try to find an http client
+		try {
+			// node
+			http = freeRequire('http');
+			remoteLoadFunc = loadScriptViaNodeHttp;
+		}
+		catch (ex) {
+			remoteLoadFunc = failIfInvoked;
+		}
+
+	}
+	else {
+		localLoadFunc = remoteLoadFunc = failIfInvoked;
+	}
+
+	if (typeof process === 'object' && process.nextTick) {
+		priv.core.nextTurn = process.nextTick;
+	}
+
+	function stripExtension (url) {
+		return url.replace(/\.js$/, '');
+	}
+
+	priv.core.loadScript = function (def, success, fail) {
+		var urlOrPath;
+		// figure out if this is local or remote and call appropriate function
+		// remote urls always have a protocol or a // at the beginning
+		urlOrPath = def.url;
+		if (/^\/\//.test(urlOrPath)) {
+			// if there's no protocol, use configured protocol
+			def.url = protocol + def.url;
+		}
+		if (hasProtocolRx.test(def.url)) {
+			return remoteLoadFunc(def, success, fail);
+		}
+		else {
+			return localLoadFunc(def, success, fail);
+		}
+	};
+
+	function loadScriptViaLoad (def, success, fail) {
+		try {
+			globalLoad(def.url);
+			success();
+		}
+		catch (ex) {
+			fail(ex);
+		}
+	}
+
+	function loadScriptViaRequire (def, success, fail) {
+		var modulePath;
+		try {
+			modulePath = stripExtension(def.url);
+			freeRequire(modulePath);
+			success();
+		}
+		catch (ex) {
+			fail(ex);
+		}
+	}
+
+	function loadScriptViaNodeHttp (def, success, fail) {
+		var options, source;
+		options = freeRequire('url').parse(def.url, false, true);
+		source = '';
+		http.get(options, function (response) {
+			response
+				.on('data', function (chunk) { source += chunk; })
+				.on('end', function () { executeScript(source); success(); })
+				.on('error', fail);
+		}).on('error', fail);
+	}
+
+	function failIfInvoked (def) {
+		throw new Error('ssjs: unable to load module in current environment: ' + def.url);
+	}
+
+	function executeScript (source) {
+		eval(source);
+	}
+
+    function extractProtocol (url) {
+        var protocol;
+        protocol = url && url.replace(extractProtocolRx,
+			function (m, p) { return p; }
+		);
+        return protocol;
+    }
+
+	function fixProtocol (protocol) {
+		return protocol && protocol[protocol.length - 1] != ':'
+			? protocol += ':'
+			: protocol;
+	}
+
+	function _nextTick (func) {
+		nextTick(func);
+	}
+
+});
+}(require, load));
+/** MIT License (c) copyright 2010-2013 B Cavalier & J Hann */
+
+/**
+ * curl CommonJS Modules/1.1 loader
+ *
+ * This loader loads modules that conform to the CommonJS Modules/1.1 spec.
+ * The loader also accommodates node.js, which  adds features beyond the
+ * spec, such as `module.exports` and `this === exports`.
+ *
+ * CommonJS modules can't run in browser environments without help. This
+ * loader wraps the modules in AMD and injects the CommonJS "free vars":
+ *
+ * define(function (require, exports, module) {
+ *     // CommonJS code goes here.
+ * });
+ *
+ * Config options:
+ *
+ * `injectSourceUrl` {boolean} If truthy (default), a //@sourceURL is injected
+ * into the script so that debuggers may display a meaningful name in the
+ * list of scripts. Setting this to false may save a few bytes.
+ *
+ * `injectScript` {boolean} If truthy, a <script> element will be inserted,
+ * rather than using a global `eval()` to execute the module.  You typically
+ * won't need to use this option.
+ *
+ * `dontAddFileExt` {RegExp|string} An expression that determines when *not*
+ * to add a '.js' extension onto a url when fetching a module from a server.
+ */
+
+(function (global, document, globalEval) {
+
+define('curl/loader/cjsm11', ['../plugin/_fetchText', 'curl/_privileged'], function (fetchText, priv) {
+
+	var head, insertBeforeEl, extractCjsDeps, checkToAddJsExt;
+
+	head = document && (document['head'] || document.getElementsByTagName('head')[0]);
+	// to keep IE from crying, we need to put scripts before any
+	// <base> elements, but after any <meta>. this should do it:
+	insertBeforeEl = head && head.getElementsByTagName('base')[0] || null;
+
+	extractCjsDeps = priv['core'].extractCjsDeps;
+	checkToAddJsExt = priv['core'].checkToAddJsExt;
+
+	function wrapSource (source, resourceId, fullUrl) {
+		var sourceUrl = fullUrl ? '////# sourceURL=' + fullUrl.replace(/\s/g, '%20') + '' : '';
+		return "define('" + resourceId + "'," +
+			"['require','exports','module'],function(require,exports,module,define){" +
+			source + "\n});\n" + sourceUrl + "\n";
+	}
+
+	var injectSource = function (el, source) {
+		// got this from Stoyan Stefanov (http://www.phpied.com/dynamic-script-and-style-elements-in-ie/)
+		injectSource = ('text' in el) ?
+			function (el, source) { el.text = source; } :
+			function (el, source) { el.appendChild(document.createTextNode(source)); };
+		injectSource(el, source);
+	};
+
+	function injectScript (source) {
+		var el = document.createElement('script');
+		injectSource(el, source);
+		el.charset = 'utf-8';
+		head.insertBefore(el, insertBeforeEl);
+	}
+
+	wrapSource['load'] = function (resourceId, require, callback, config) {
+		var errback, url, sourceUrl;
+
+		errback = callback['error'] || function (ex) { throw ex; };
+		url = checkToAddJsExt(require['toUrl'](resourceId), config);
+		sourceUrl = config['injectSourceUrl'] !== false && url;
+
+		fetchText(url, function (source) {
+			var moduleMap;
+
+			// find (and replace?) dependencies
+			moduleMap = extractCjsDeps(source);
+
+			// get deps
+			require(moduleMap, function () {
+
+
+				// wrap source in a define
+				source = wrapSource(source, resourceId, sourceUrl);
+
+				if (config['injectScript']) {
+					injectScript(source);
+				}
+				else {
+					//eval(source);
+					globalEval(source);
+				}
+
+				// call callback now that the module is defined
+				callback(require(resourceId));
+
+			}, errback);
+		}, errback);
+	};
+
+	wrapSource['cramPlugin'] = '../cram/cjsm11';
+
+	return wrapSource;
+
+});
+
+}(this, this.document, function () { /* FB needs direct eval here */ eval(arguments[0]); }));
+/** MIT License (c) copyright 2010-2013 B Cavalier & J Hann */
+
+/**
+ * curl locale! plugin
+ *
+ * This is a very light localization plugin that gets inserted into AMD bundles
+ * by cram.js.  Its functionality is nearly identical to the i18n! plugin.
+ * The only difference of significance is that the locale! plugin initially
+ * assumes that the module for the i18n strings is already loaded.  If the
+ * module is not loaded (and config.locale === true), it invokes the i18n!
+ * plugin to fetch it and assemble it.
+ *
+ * You probably don't want to use this plugin directly.  You likely want the
+ * i18n! plugin.  Just sayin.
+ *
+ */
+define('curl/plugin/locale', function () {
+
+	var appendLocaleRx;
+
+	// finds the end and an optional .js extension since some devs may have
+	// added it, which is legal since plugins sometimes require an extension.
+	appendLocaleRx = /(\.js)?$/;
+
+	getLocale['toModuleId'] = toModuleId;
+	getLocale['load'] = load;
+
+	return getLocale;
+
+	/**
+	 * Sniffs the current locale.  In environments that don't have
+	 * a global `window` object, no sniffing happens and false is returned.
+	 * You may also skip the sniffing by supplying an options.locale value.
+	 * @param {Object} [options]
+	 * @param {String|Boolean|Function} [options.locale] If a string, it is
+	 * assumed to be a locale override and is returned.  If a strict false,
+	 * locale sniffing is skipped and false is returned. If a function, it is
+	 * called with the same signature as this function and the result returned.
+	 * @param {String} [absId] the normalized id sent to the i18n plugin.
+	 * @returns {String|Boolean}
+	 */
+	function getLocale (options, absId) {
+		var locale, ci, lang;
+
+		if (options) {
+			locale = options['locale'];
+			// if locale is a function, use it to get the locale
+			if (typeof locale == 'function') locale = locale(options, absId);
+			// just return any pre-configured locale.
+			if (typeof locale == 'string') return locale;
+		}
+
+		// bail if we're server-side
+		if (typeof window == 'undefined') return false;
+
+		// closure doesn't seem to know about recent DOM standards
+		ci = window['clientInformation'] || window.navigator;
+		lang = ci && (ci.language || ci['userLanguage']) || '';
+		return lang.toLowerCase();
+	}
+
+	function toModuleId (defaultId, locale) {
+		var suffix = locale ? '/' + locale  : '';
+		return defaultId.replace(appendLocaleRx, suffix + '$&');
+	}
+
+	function load (absId, require, loaded, config) {
+		var locale, toId, result, ex, bundleId, defaultId;
+
+		// figure out the locale and bundle to use
+		locale = getLocale(config, absId);
+		toId = config['localeToModuleId'] || toModuleId;
+
+		// try to get a bundle that's already loaded (sync require)
+		bundleId = locale ? toId(absId, locale) : absId;
+		result = attemptSync(require, bundleId);
+
+		if (result.value) return loaded(result.value);
+
+		// try default bundle sync (unless we've already tried it)
+		defaultId = locale ? toId(absId, false) : absId;
+		result = defaultId !== bundleId
+			? attemptSync(require, defaultId)
+			: {};
+
+		if (result.value) return loaded(result.value);
+
+		// locale === true, try to use the i18n plugin
+		if (locale === true) {
+			require(['i18n!' + absId], loaded, fail);
+		}
+		else {
+			ex = new Error('Unable to find correct locale for ' + absId);
+			if (loaded.error) loaded.error(ex);
+			else throw ex;
+		}
+	}
+
+	function attemptSync (require, id) {
+		var result = {};
+		try {
+			result.value = require(id);
+		}
+		catch (ex) {
+			result.error = ex || new Error('unknown error');
+		}
+		return result;
+	}
+
+});
+/** MIT License (c) copyright 2010-2013 B Cavalier & J Hann */
+
+/**
+ * curl i18n plugin
+ *
+ * Fetch the user's locale-specific i18n bundle (e.g. strings/en-us.js"),
+ * any less-specific versions (e.g. "strings/en.js"), and a default i18n bundle
+ * (e.g. "strings.js").  All of these files are optional, but at least one
+ * is required or an error is propagated.
+ *
+ * If no locale-specific versions are found, use a default i18n bundle, if any.
+ *
+ * If multiple locale-specific versions are found, merge them such that
+ * the more specific versions override properties in the less specific.
+ *
+ * Browsers follow the language specifiers in the Language-Tags feature of
+ * RFC 5646: http://tools.ietf.org/html/rfc5646
+ *
+ * Example locales: "en", "en-US", "en-GB", "fr-FR", "kr", "cn", "cn-"
+ *
+ * These are lower-cased before being transformed into module ids.  This
+ * plugin uses a simple algorithm to formulate file names from locales.
+ * It's probably easier to show an example than to describe it.  Take a
+ * look at the examples section for more information.  The algorithm may
+ * also be overridden via the localToModuleId configuration option.
+ *
+ * Nomenclature (to clarify usages of "bundle" herein):
+ *
+ * i18n bundle: A collection of javascript variables in the form of a JSON or
+ *   javascript object and exported via an AMD define (or CommonJS exports
+ *   if you are using the cjsm11 shim).  These are typically strings, but
+ *   can be just about anything language-specific or location-specific.
+ *
+ * AMD bundle: A concatenated set of AMD modules (or AMD-wrapped CommonJS
+ *   modules) that can be loaded more efficiently than individual modules.
+ *
+ * Configuration options:
+ *
+ * locale {Boolean|String|Function} (default === true)
+ *   tl;dr: `false` means only do the minimum work to get the correct locale
+ *   bundle or use the default. `true` means do whatever possible to try
+ *   to get the correct locale bundle before using the default. A string
+ *   means do the minimum work to get the locale specified in the string
+ *   or use the default.  The default value of this param is `true` for
+ *   backwards compat, but you probably want `false` to prevent extra
+ *   fetches to the server when a locale isn't already loaded.
+ *
+ *   If an explicit `true` value is provided, the plugin will sniff the
+ *   browser's clientInformation.language property (or fallback equivalent)
+ *   to determine the locale and seek a locale-specific i18n bundle.  If the
+ *   bundle is not already loaded, it will be fetched, potentially in many
+ *   parts -- one part for each dash-delimited term in the locale.
+ *   If the no bundles are found, an error is returned.
+ *
+ *   If an explicit `false` value is provided, the plugin will sniff the
+ *   browser's locale and use it if it is already loaded.  If it is not loaded
+ *   it will attempt to use (and potentially fetch) the default bundle.
+ *   (Note: within a bundle, the default bundle will not be fetched from the
+ *   server.)  If the default bundle is not found, an error is returned.
+ *   This is a great option when you don't want this plugin to attempt to fetch
+ *   (possibly unsupported) locales automatically, like `true` does.
+ *
+ *   If this is a string, it is assumed to be an RFC 5646-compatible language
+ *   specifier(s).  The plugin will seek the i18n bundle for this locale
+ *   and use the default bundle if it doesn't exist. (Note: within a bundle,
+ *   the default bundle will not be fetched from the server.)
+ *   This is an excellent option to test specific locales or to override
+ *   the browser's locale at run-time.
+ *
+ *   This option may also be a function that returns a language specifier
+ *   string or boolean, which will be processed as per the details above.
+ *   The absolute module id and a language specifier are passed as the
+ *   parameters to this function.
+ *
+ *   Note: contrary to our advice for most other plugin options, locale
+ *   should be specified at the package level or at the top level of the
+ *   configuration.  Specifying it at the plugin level won't work when
+ *   loading code in a bundle since the i18n plugin is not used in a bundle.
+ *   The locale! plugin may be used, instead.  For instance, the following
+ *   configuration for the i18n plugin will not be visible to anything in a
+ *   bundle:
+ *
+ *   curl.config({ plugins: { i18n: { locale: false } } });
+ *
+ *   Use one of these configuration strategies, instead:
+ *
+ *   // locale is configured for the "myApp" package
+ *   curl.config({
+ *     packages: {
+ *       myApp: { location: 'myapp', config: { locale: false } }
+ *     }
+ *   });
+ *
+ *   // locale is configured for all packages
+ *   curl.config({ locale: false });
+ *
+ * localeToModuleId {Function} a function that translates a locale string to a
+ *   module id where an AMD-formatted string bundle may be found.  The default
+ *   format is a module whose name is the locale located under the default
+ *   (non-locale-specific) bundle.  For example, if the default bundle is
+ *   "myview/strings.js", the en-us version will be "myview/strings/en-us.js".
+ *   Parameters: moduleId {String}, locale {String}, returns {String}
+ *
+ * locales {Array} a build-time-only option that specifies an array of
+ *   language specifier strings.  These i18n bundles will be built into the
+ *   AMD bundle as locale bundles.
+ *
+ * During a build, locale-specific i18n bundles are merged into a single
+ * bundle. This allows the lightweight locale! plugin to be used in the
+ * build, rather than the larger i18n! plugin. The locale! plugin takes the
+ * same run-time configuration options as the i18n! plugin and will exhibit
+ * nearly* identical behavior. For instance, if you specify the locales for
+ * "en" and "en-us" for a module, "foo", two separate i18n bundles,
+ * "foo/en" and "foo/en-us" will be included in the AMD bundle.
+ *
+ * *The locale! plugin only fetches additional locale bundles when the
+ * locale config option is true.
+ *
+ * @example
+ *
+ * `var strings = require("i18n!myapp/myview/strings");`
+ *
+ * If the current user's locale is "en-US", this plugin will simultaneously
+ * seek the following modules unless "i18n!myapp/myview/strings" is already
+ * loaded:
+ *   * "myapp/myview/strings.js"
+ *   * "myapp/myview/strings/en.js"
+ *   * "myapp/myview/strings/en-us.js"
+ *
+ * If none are found, an error is propagated.  If neither "en" or "en-us"
+ * is found, "strings" (the default bundle) is used.  If only "en" or "en-us"
+ * is found, it is used. If both are found, "en-us" is used to override "en"
+ * and the merged result is used.
+ *
+ */
+
+define('curl/plugin/i18n', ['./locale'], function (getLocale) {
+
+	return {
+
+		load: function (resId, require, loaded, config) {
+			var eb, toId, locale, bundles, fetched, id, ids, specifiers, i;
+
+			eb = loaded.error;
+
+			if (!resId) {
+				eb(new Error('blank i18n bundle id.'));
+			}
+
+			// resolve config options
+			toId = config['localeToModuleId'] || getLocale.toModuleId;
+			locale = getLocale(config, resId);
+
+			// keep track of what bundles we've found
+			ids = [resId];
+			bundles = [];
+			fetched = 0;
+
+			// only look for locales if we sniffed one and the dev
+			// hasn't said "don't fetch" via `locale: false`.
+			if (locale && config.locale !== false) {
+				// get variations / specificities
+
+				// determine all the variations / specificities we might find
+				ids = ids.concat(locale.split('-'));
+				specifiers = [];
+
+				// correct. start loop at 1! default bundle was already fetched
+				for (i = 1; i < ids.length; i++) {
+					// add next part to specifiers
+					specifiers[i - 1] = ids[i];
+					// create bundle id
+					id = toId(resId, specifiers.join('-'));
+					// fetch and save found bundles, while silently skipping
+					// missing ones
+					fetch(require, id, i, got, countdown);
+				}
+			}
+
+			// get the default bundle, if any. this goes after we get
+			// variations to ensure that ids.length is set correctly.
+			fetch(require, resId, 0, got, countdown);
+
+			function got (bundle, i) {
+				bundles[i] = bundle;
+				countdown();
+			}
+
+			function countdown () {
+				var base;
+				if (++fetched == ids.length) {
+					if (bundles.length == 0) {
+						eb(new Error('No i18n bundles found: "' + resId + '", locale "' + locale + '"'));
+					}
+					else {
+						base = bundles[0] || {};
+						for (i = 1; i < bundles.length; i++) {
+							base = mixin(base, bundles[i]);
+						}
+						loaded(base);
+					}
+				}
+			}
+
+		},
+
+		'cramPlugin': '../cram/i18n'
+
+	};
+
+	function fetch (require, id, i, cb, eb) {
+		require([id], function (bundle) { cb(bundle, i); }, eb);
+	}
+
+	function mixin (base, props) {
+		var obj = {}, p;
+		for (p in base) obj[p] = base[p];
+		if (props) {
+			for (p in props) obj[p] = props[p];
+		}
+		return obj;
+	}
+
+});
 /** MIT License (c) copyright 2010-2013 B Cavalier & J Hann */
 
 /**
